@@ -1,7 +1,7 @@
 """
 Orders (write-only model)
 SPDX - License - Identifier: LGPL - 3.0 - or -later
-Auteurs : Gabriel C. Ullmann, Fabio Petrillo, 2025
+Auteurs : Gabriel C. Ullmann, Fabio Petrillo, Ayman Zahir 2025
 """
 from models.product import Product
 from models.order_item import OrderItem
@@ -100,25 +100,38 @@ def delete_order(order_id: int):
 def add_order_to_redis(order_id, user_id, total_amount, items):
     """Insert order to Redis"""
     r = get_redis_conn()
-    print(r)
+    # Hash de la commande
+    r.hset(f"order:{order_id}", mapping={
+        "id": str(order_id),
+        "user_id": str(user_id),
+        "total": str(total_amount),
+    })
+    # Index des IDs pour listage rapide
+    r.sadd("orders:all", order_id)
+
 
 def delete_order_from_redis(order_id):
     """Delete order from Redis"""
-    pass
+    r = get_redis_conn()
+    r.delete(f"order:{order_id}")
+    r.srem("orders:all", order_id)
+
 
 def sync_all_orders_to_redis():
     """ Sync orders from MySQL to Redis """
-    # redis
     r = get_redis_conn()
     orders_in_redis = r.keys(f"order:*")
     rows_added = 0
     try:
         if len(orders_in_redis) == 0:
-            # mysql
-            orders_from_mysql = []
+            orders_from_mysql = get_orders_from_mysql(limit=9999) or []
             for order in orders_from_mysql:
-                # TODO: terminez l'implementation
-                print(order)
+                add_order_to_redis(
+                    order_id=order.id,
+                    user_id=order.user_id,
+                    total_amount=getattr(order, "total_amount", 0),
+                    items=[]
+                )
             rows_added = len(orders_from_mysql)
         else:
             print('Redis already contains orders, no need to sync!')
