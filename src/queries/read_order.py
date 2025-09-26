@@ -7,12 +7,13 @@ Auteurs : Gabriel C. Ullmann, Fabio Petrillo, Ayman Zahir 2025
 from db import get_sqlalchemy_session, get_redis_conn
 from sqlalchemy import desc
 from models.order import Order
+from collections import defaultdict
 from typing import List, Tuple
 
 def get_order_by_id(order_id):
     """Get order by ID from Redis"""
     r = get_redis_conn()
-    return r.hgetall(order_id)
+    return r.hgetall(f"order:{order_id}") or r.hgetall(str(order_id))
 
 def get_orders_from_mysql(limit=9999):
     """Get last X orders"""
@@ -43,39 +44,38 @@ def get_orders_from_redis(limit=9999):
     return results
 
 
-def get_highest_spending_users():
-    """Get report of best selling products"""
+def get_highest_spending_users(limit: int = 10):
+    """Return up to `limit` users ordered by amount spent desc."""
     r = get_redis_conn()
 
     ids = r.smembers("orders:all")
     if not ids:
         return []
 
-    count_by_user = {}
-    spent_by_user = {}
+    spent_by_user = defaultdict(float)
+    count_by_user = defaultdict(int)
 
     for oid in ids:
         data = r.hgetall(f"order:{oid}") or r.hgetall(str(oid))
         if not data:
             continue
+
         uid = data.get("user_id")
         if not uid:
             continue
 
-        count_by_user[uid] = count_by_user.get(uid, 0) + 1
-
+        count_by_user[uid] += 1
         try:
-            total = float(data.get("total", 0) or 0)
+            spent_by_user[uid] += float(data.get("total", 0) or 0)
         except (TypeError, ValueError):
-            total = 0.0
-        spent_by_user[uid] = spent_by_user.get(uid, 0.0) + total
+            pass
 
-    ranked = sorted(
-        ((uid, count_by_user.get(uid, 0), spent_by_user.get(uid, 0.0)) for uid in count_by_user),
-        key=lambda t: (t[1], t[2]),
+    highest_spending_users = sorted(
+        ((uid, count_by_user[uid], spent_by_user[uid]) for uid in spent_by_user),
+        key=lambda item: item[2],
         reverse=True,
     )
-    return ranked
+    return highest_spending_users[:limit]
 
 def get_best_selling_products(limit: int = 10) -> List[Tuple[str, int]]:
     """
