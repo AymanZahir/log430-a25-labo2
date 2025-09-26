@@ -6,7 +6,8 @@ Auteurs : Gabriel C. Ullmann, Fabio Petrillo, Ayman Zahir  2025
 from views.template_view import get_template, get_param
 from db import get_sqlalchemy_session
 from models.user import User
-from queries.read_order import get_highest_spending_users as get_highest_spenders
+from models.product import Product
+from queries.read_order import get_highest_spending_users as get_highest_spenders, get_best_selling_products
 
 def show_highest_spending_users():
     """ Show report of highest spending users """
@@ -46,4 +47,24 @@ def show_highest_spending_users():
 
 def show_best_sellers():
     """ Show report of best selling products """
-    return get_template("<h2>Les articles les plus vendus</h2><p>(TODO: Liste avec nom, total vendu)</p>")
+    session = get_sqlalchemy_session()
+
+    rows = get_best_selling_products() or []
+    pids = [int(pid) for (pid, _) in rows] if rows else []
+
+    name_by_id = {}
+    if pids:
+        products = session.query(Product).filter(Product.id.in_(pids)).all()
+        for p in products:
+            name_by_id[p.id] = getattr(p, "name", None) or getattr(p, "title", None) or f"Produit #{p.id}"
+
+    items_html = []
+    for pid, sold in rows:
+        display = name_by_id.get(int(pid), f"Produit #{pid}")
+        items_html.append(f"<li>{display} — {sold} vendu(s)</li>")
+
+    body = (
+        "<h2>Les articles les plus vendus</h2>"
+        "<ul>" + ("".join(items_html) if items_html else "<li>(aucune vente)</li>") + "</ul>"
+    )
+    return get_template(body)

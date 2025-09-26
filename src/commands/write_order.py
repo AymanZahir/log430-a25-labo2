@@ -100,14 +100,19 @@ def delete_order(order_id: int):
 def add_order_to_redis(order_id, user_id, total_amount, items):
     """Insert order to Redis"""
     r = get_redis_conn()
-    # Hash de la commande
     r.hset(f"order:{order_id}", mapping={
         "id": str(order_id),
         "user_id": str(user_id),
         "total": str(total_amount),
     })
-    # Index des IDs pour listage rapide
     r.sadd("orders:all", order_id)
+
+    for it in items:
+        pid = int(it.get("product_id"))
+        qty = int(float(it.get("quantity", 1)))
+        if qty > 0:
+            r.incrby(f"product:{pid}", qty)
+            r.sadd("products:all", pid)
 
 
 def delete_order_from_redis(order_id):
